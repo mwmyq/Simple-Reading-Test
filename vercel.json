@@ -1,12 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/", "destination": "/api/reading?reading_path=/" },
-    { "source": "/:path(pilot|pilot\\.html|login|manage|researcher\\.html|pilot\\.js|diagnostic\\.js|researcher\\.js|standalone\\.js)", "destination": "/api/reading?reading_path=/:path" },
-    { "source": "/assets/reading-book-logo.png", "destination": "/api/reading?reading_path=/assets/reading-book-logo.png" },
-    { "source": "/api/pilot", "destination": "/api/reading?reading_path=/api/pilot" },
-    { "source": "/api/pilot/:path(records|export)", "destination": "/api/reading?reading_path=/api/pilot/:path" },
-    { "source": "/api/auth/:path(login|logout)", "destination": "/api/reading?reading_path=/api/auth/:path" },
-    { "source": "/api/admin/:path(invitations|revoke)", "destination": "/api/reading?reading_path=/api/admin/:path" }
+  "routes": [
+    { "src": "^/$", "dest": "/api/reading?reading_path=/" },
+    { "src": "^/(pilot|pilot\\.html|login|manage|researcher\\.html|pilot\\.css|book\\.css|pilot\\.js|diagnostic\\.js|researcher\\.js|standalone\\.js)$", "dest": "/api/reading?reading_path=/$1" },
+    { "src": "^/assets/reading-book-logo\\.png$", "dest": "/api/reading?reading_path=/assets/reading-book-logo.png" },
+    { "src": "^/api/(pilot(?:/records|/export)?|auth/(?:login|logout)|admin/(?:invitations|revoke))$", "dest": "/api/reading?reading_path=/api/$1" },
+    { "handle": "filesystem" }
   ]
 }
