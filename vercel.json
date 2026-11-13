@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/", "destination": "/api/reading?reading_path=/" },
+    { "source": "/:path(pilot|pilot\\.html|login|manage|researcher\\.html|pilot\\.js|diagnostic\\.js|researcher\\.js|standalone\\.js)", "destination": "/api/reading?reading_path=/:path" },
+    { "source": "/assets/reading-book-logo.png", "destination": "/api/reading?reading_path=/assets/reading-book-logo.png" },
+    { "source": "/api/pilot", "destination": "/api/reading?reading_path=/api/pilot" },
+    { "source": "/api/pilot/:path(records|export)", "destination": "/api/reading?reading_path=/api/pilot/:path" },
+    { "source": "/api/auth/:path(login|logout)", "destination": "/api/reading?reading_path=/api/auth/:path" },
+    { "source": "/api/admin/:path(invitations|revoke)", "destination": "/api/reading?reading_path=/api/admin/:path" }
+  ]
+}
