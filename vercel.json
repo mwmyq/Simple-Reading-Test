@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "routes": [
+    { "src": "^/$", "dest": "/api/reading?reading_path=/" },
+    { "src": "^/(pilot|pilot\\.html|login|manage|researcher\\.html|pilot\\.css|book\\.css|pilot\\.js|diagnostic\\.js|researcher\\.js|standalone\\.js)$", "dest": "/api/reading?reading_path=/$1" },
+    { "src": "^/assets/reading-book-logo\\.png$", "dest": "/api/reading?reading_path=/assets/reading-book-logo.png" },
+    { "src": "^/api/(pilot(?:/records|/export)?|auth/(?:login|logout)|admin/(?:invitations|revoke))$", "dest": "/api/reading?reading_path=/api/$1" },
+    { "handle": "filesystem" }
+  ]
+}
