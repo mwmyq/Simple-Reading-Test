@@ -1,4 +1,5 @@
 import { request as httpsRequest } from 'node:https';
+import { isIP } from 'node:net';
 
 const pages = new Set(['/', '/pilot', '/pilot.html', '/login', '/manage', '/researcher.html']);
 const assets = new Set(['/pilot.css', '/book.css', '/pilot.js', '/diagnostic.js', '/researcher.js', '/standalone.js', '/assets/reading-book-logo.png']);
@@ -11,7 +12,7 @@ function error(status, message) {
   return Response.json({ error: message }, { status, headers: noStore });
 }
 
-export function createRelay({ publicHosts, originHost, originAddress, originPort = 443, ca, readOnly = true, previewToken }) {
+export function createRelay({ publicHosts, originHost, originAddress, originPort = 443, ca, readOnly = true, previewToken, productionOrigin }) {
   return async function relay(incoming, path) {
     const url = new URL(incoming.url);
     if (url.protocol !== 'https:' || !publicHosts.has(url.host)) return error(404, '入口不可用。');
@@ -23,6 +24,10 @@ export function createRelay({ publicHosts, originHost, originAddress, originPort
     if (isPost && readOnly) return error(405, '当前预览仅检查页面访问。');
 
     const headers = { Host: previewToken ? 'reading-preview.invalid' : originHost };
+    if (productionOrigin) {
+      headers['X-Reading-Production-Identity'] = productionOrigin.token;
+      headers['X-Reading-Client-IP'] = productionOrigin.clientIp;
+    }
     const applicationCookies = incoming.headers.get('cookie')?.split(';').filter((cookie) =>
       /^(?:__Host-ancient_reading_reader|ancient_standalone_session)=/.test(cookie.trim()));
     if (applicationCookies?.length) headers.Cookie = applicationCookies.join(';');
@@ -38,12 +43,12 @@ export function createRelay({ publicHosts, originHost, originAddress, originPort
       if (Number(incoming.headers.get('content-length')) > 16384) return error(413, '请求内容过长。');
       body = Buffer.from(await incoming.arrayBuffer());
       if (body.length > 16384) return error(413, '请求内容过长。');
-      headers.Origin = `https://${originHost}`;
+      headers.Origin = `https://${productionOrigin?.applicationHost ?? originHost}`;
       headers['Content-Type'] = 'application/json';
       headers['Content-Length'] = body.length;
     }
 
-    const upstreamPath = (previewToken ? '/__reading_preview' : '') + path + url.search;
+    const upstreamPath = (productionOrigin ? '/__reading_production' : previewToken ? '/__reading_preview' : '') + path + url.search;
     return new Promise((resolve) => {
       const upstream = httpsRequest({
         hostname: originAddress, servername: originHost, port: originPort, ca,
@@ -54,13 +59,13 @@ export function createRelay({ publicHosts, originHost, originAddress, originPort
         for (const name of responseHeaders) {
           if (typeof res.headers[name] === 'string') outgoing.set(name, res.headers[name]);
         }
-        if (previewToken && res.headers['x-reading-store'] === 'preview-simulation') {
-          outgoing.set('X-Reading-Store', 'preview-simulation');
-        } else if (previewToken) {
+        const expectedStore = productionOrigin ? 'production' : previewToken ? 'preview-simulation' : null;
+        if (expectedStore && res.headers['x-reading-store'] !== expectedStore) {
           res.resume();
-          resolve(error(502, '模拟服务连接失败。'));
+          resolve(error(502, '试读源站连接失败。'));
           return;
         }
+        if (expectedStore) outgoing.set('X-Reading-Store', expectedStore);
         for (const cookie of res.headers['set-cookie'] ?? []) outgoing.append('Set-Cookie', cookie);
         const location = res.headers.location;
         if (location?.startsWith('/') && !location.startsWith('//') && !location.includes('\\')) {
@@ -82,6 +87,7 @@ export function createRelay({ publicHosts, originHost, originAddress, originPort
 
 export default {
   fetch(incoming) {
+    if (process.env.VERCEL_ENV === 'production') return serveProduction(incoming);
     if (process.env.VERCEL_ENV !== 'preview' || !process.env.VERCEL_URL ||
         process.env.VERCEL_GIT_COMMIT_REF !== 'vercel-origin-check') return error(404, '入口不可用。');
     const previewToken = incoming.headers.get('x-vercel-oidc-token');
@@ -98,3 +104,30 @@ export default {
     })(new Request(url, incoming), path);
   },
 };
+
+function serveProduction(incoming) {
+  const publicHost = 'www.gujiyuedu.site';
+  const url = new URL(incoming.url);
+  if (process.env.VERCEL_GIT_COMMIT_REF !== 'main' || url.protocol !== 'https:') return error(404, '入口不可用。');
+  const path = url.searchParams.get('reading_path') ?? '/';
+  url.searchParams.delete('reading_path');
+  if (url.host === 'gujiyuedu.site' && incoming.method === 'GET') {
+    if (!pages.has(path) && !assets.has(path)) return error(404, '页面不存在。');
+    const target = new URL(`https://${publicHost}`);
+    target.pathname = path;
+    target.search = url.search;
+    return new Response(null, { status: 307, headers: { ...noStore, Location: target.href } });
+  }
+  if (url.host !== publicHost) return error(404, '入口不可用。');
+  if (process.env.READING_ORIGIN_HOST !== 'origin.gujiyuedu.site') return error(503, '试读入口尚未启用。');
+  const token = incoming.headers.get('x-vercel-oidc-token');
+  const clientIp = incoming.headers.get('x-vercel-forwarded-for');
+  if (!token || !isIP(clientIp ?? '')) return error(503, '试读入口暂不可用。');
+  return createRelay({
+    publicHosts: new Set([publicHost]),
+    originHost: process.env.READING_ORIGIN_HOST,
+    originAddress: process.env.READING_ORIGIN_HOST,
+    readOnly: false,
+    productionOrigin: { token, clientIp, applicationHost: 'gujiyuedu.site' },
+  })(new Request(url, incoming), path);
+}
